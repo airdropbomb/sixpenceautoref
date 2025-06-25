@@ -4,7 +4,7 @@ from eth_utils import to_hex
 from eth_account import Account
 from datetime import datetime
 from colorama import Fore, Style
-import asyncio, random, json, os, pytz
+import asyncio, random, json, os, pytz, time
 
 wib = pytz.timezone('Asia/Jakarta')
 USER_AGENT = [
@@ -121,50 +121,36 @@ class Sixpence:
                 response.raise_for_status()
                 return await response.json()
 
-    async def user_login(self, account, address, proxy=None):
-        url = f"{self.BASE_API}/login"
-        data = json.dumps(self.generate_payload(account, address))
-        headers = self.BASE_HEADERS[address].copy()
-        headers["Authorization"] = "Bearer null"
-        headers["Content-Length"] = str(len(data))
-        headers["Content-Type"] = "application/json"
-        async with ClientSession(timeout=ClientTimeout(total=60)) as session:
-            async with session.post(url, headers=headers, data=data, proxy=proxy, ssl=False) as response:
-                response.raise_for_status()
-                return await response.json()
-
-    async def bind_invite(self, address, proxy=None):
-        url = f"{self.BASE_API}/inviteBind"
-        data = json.dumps({"inviteCode": self.ref_code})
-        headers = self.BASE_HEADERS[address].copy()
-        headers["Authorization"] = f"Bearer {self.access_tokens[address]}"
-        headers["Content-Length"] = str(len(data))
-        headers["Content-Type"] = "application/json"
-        async with ClientSession(timeout=ClientTimeout(total=60)) as session:
-            async with session.post(url, headers=headers, data=data, proxy=proxy, ssl=False) as response:
-                response.raise_for_status()
-                return await response.json()
-
     async def process_user_login(self, account, address, use_proxy):
         proxy = self.get_next_proxy_for_account(address) if use_proxy else None
-        nonce_data = await self.get_nonce(address, proxy)
-        if nonce_data and nonce_data.get("msg") == "ok":
-            self.nonce[address] = nonce_data["data"]["nonce"]
-            self.exp_time[address] = nonce_data["data"]["expireTime"]
-            login = await self.user_login(account, address, proxy)
-            if login and login.get("msg") == "success":
-                self.access_tokens[address] = login["data"]["token"]
-                self.print_message(address, proxy, Fore.GREEN, "Login Success")
-                return True
+        try:
+            nonce_data = await self.get_nonce(address, proxy)
+            if nonce_data and nonce_data.get("msg") == "ok":
+                self.nonce[address] = nonce_data["data"]["nonce"]
+                self.exp_time[address] = nonce_data["data"]["expireTime"]
+                login = await self.user_login(account, address, proxy)
+                if login and login.get("msg") == "success":
+                    self.access_tokens[address] = login["data"]["token"]
+                    self.print_message(address, proxy, Fore.GREEN, "Login Success")
+                    return True
+                else:
+                    self.print_message(address, proxy, Fore.RED, f"Login Failed: {login}")
+            else:
+                self.print_message(address, proxy, Fore.RED, f"Nonce Fetch Failed: {nonce_data}")
+        except Exception as e:
+            self.print_message(address, proxy, Fore.RED, f"Error in Login: {str(e)}")
         return False
 
     async def process_bind_invite(self, account, address, use_proxy):
         proxy = self.get_next_proxy_for_account(address) if use_proxy else None
-        bind = await self.bind_invite(address, proxy)
-        if bind and bind.get("msg") == "ok":
-            self.print_message(address, proxy, Fore.GREEN, f"Referral Code {self.ref_code} Bound Successfully")
-        else:
-            self.print_message(address, proxy, Fore.RED, "Failed to Bind Referral Code")
+        try:
+            bind = await self.bind_invite(address, proxy)
+            if bind and bind.get("msg") == "ok":
+                self.print_message(address, proxy, Fore.GREEN, f"Referral Code {self.ref_code} Bound Successfully")
+            else:
+                self.print_message(address, proxy, Fore.RED, f"Failed to Bind Referral Code: {bind}")
+        except Exception as e:
+            self.print_message(address, proxy, Fore.RED, f"Error in Bind: {str(e)}")
 
     async def main(self):
         try:
@@ -194,21 +180,27 @@ class Sixpence:
 
             # အကောင့်တွေကို login လုပ်ပြီး referral code ချိတ်မယ်
             for idx, account in enumerate(accounts, start=1):
-                address = self.generate_address(account)
-                if not address:
-                    self.log(f"{Fore.RED}[ Account: {idx} - Status: Invalid Private Key ]{Style.RESET_ALL}")
-                    continue
+                try:
+                    address = self.generate_address(account)
+                    if not address:
+                        self.log(f"{Fore.RED}[ Account: {idx} - Status: Invalid Private Key ]{Style.RESET_ALL}")
+                        continue
 
-                user_agent = random.choice(USER_AGENT)
-                self.BASE_HEADERS[address] = {
-                    "Accept": "application/json, text/plain, */*",
-                    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Origin": "chrome-extension://bcakokeeafaehcajfkajcpbdkfnoahlh",
-                    "User-Agent": user_agent
-                }
+                    user_agent = random.choice(USER_AGENT)
+                    self.BASE_HEADERS[address] = {
+                        "Accept": "application/json, text/plain, */*",
+                        "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+                        "Origin": "chrome-extension://bcakokeeafaehcajfkajcpbdkfnoahlh",
+                        "User-Agent": user_agent
+                    }
 
-                if await self.process_user_login(account, address, use_proxy):
-                    await self.process_bind_invite(account, address, use_proxy)
+                    if await self.process_user_login(account, address, use_proxy):
+                        await self.process_bind_invite(account, address, use_proxy)
+                    # Request တွေကြားမှာ 5 စက္ကန့် delay ထည့်ပါ
+                    time.sleep(5)
+                except Exception as e:
+                    self.log(f"{Fore.RED}[ Account: {idx} - Error: {str(e)} ]{Style.RESET_ALL}")
+                    continue  # Error ဖြစ်ရင် နောက်အကောင့်ကို ဆက်လုပ်ပါ
 
         except ValueError:
             self.log(f"{Fore.RED}Invalid input for number of accounts.{Style.RESET_ALL}")
