@@ -16,7 +16,20 @@ class Sixpence:
     def __init__(self):
         self.BASE_API = "https://us-central1-openoracle-de73b.cloudfunctions.net/backend_apis/api/service"
         self.BASE_HEADERS = {}
-        self.ref_code = "3SO6MZ"  # မင်းရဲ့ referral code နဲ့ ပြောင်းလို့ရတယ်
+        # refer.txt ကနေ referral code ဖတ်မယ်
+        try:
+            with open('refer.txt', 'r') as file:
+                self.ref_code = file.read().strip()
+                if not self.ref_code:
+                    self.log(f"{Fore.RED}refer.txt is empty. Please add a referral code.{Style.RESET_ALL}")
+                    raise ValueError("Empty referral code")
+                self.log(f"{Fore.GREEN}Referral Code Loaded: {self.ref_code}{Style.RESET_ALL}")
+        except FileNotFoundError:
+            self.log(f"{Fore.RED}refer.txt file not found. Using default code: FTS6LA{Style.RESET_ALL}")
+            self.ref_code = "FTS6LA"  # default code ထားမယ်
+        except Exception as e:
+            self.log(f"{Fore.RED}Failed to read refer.txt: {e}{Style.RESET_ALL}")
+            self.ref_code = "FTS6LA"  # default code ထားမယ်
         self.proxies = []
         self.proxy_index = 0
         self.account_proxies = {}
