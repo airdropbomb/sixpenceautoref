@@ -26,11 +26,11 @@ class Sixpence:
                     raise ValueError("Empty referral code")
                 self.log(f"{Fore.GREEN}Referral Code Loaded: {self.ref_code}{Style.RESET_ALL}")
         except FileNotFoundError:
-            self.log(f"{Fore.RED}refer.txt file not found. Using default code: FTS6LA{Style.RESET_ALL}")
-            self.ref_code = "FTS6LA"
+            self.log(f"{Fore.RED}refer.txt file not found. Using default code: 3SO6MZ{Style.RESET_ALL}")
+            self.ref_code = "3SO6MZ"
         except Exception as e:
             self.log(f"{Fore.RED}Failed to read refer.txt: {e}{Style.RESET_ALL}")
-            self.ref_code = "FTS6LA"
+            self.ref_code = "3SO6MZ"
         self.proxies = []
         self.proxy_index = 0
         self.account_proxies = {}
@@ -98,6 +98,8 @@ class Sixpence:
 
     def generate_payload(self, account, address):
         try:
+            if address not in self.nonce:
+                raise Exception(f"Nonce not found for address: {address}")
             issued_at = datetime.now(pytz.UTC).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
             message = f"bcakokeeafaehcajfkajcpbdkfnoahlh wants you to sign in with your Ethereum account:\n{address}\n\nBy signing, you are proving you own this wallet and logging in. This does not initiate a transaction or cost any fees.\n\nURI: chrome-extension://bcakokeeafaehcajfkajcpbdkfnoahlh\nVersion: 1\nChain ID: 42000\nNonce: {self.nonce[address]}\nIssued At: {issued_at}"
             encoded_message = encode_defunct(text=message)
@@ -152,8 +154,8 @@ class Sixpence:
             try:
                 nonce_data = await self.get_nonce(address, proxy)
                 if nonce_data and nonce_data.get("msg") == "ok":
-                    self.nonce[0] = nonce_data["data"]["nonce"]
-                    self.exp_time[0] = nonce_data["data"]["expireTime"]
+                    self.nonce[address] = nonce_data["data"]["nonce"]
+                    self.exp_time[address] = nonce_data["data"]["expireTime"]
                     login = await self.user_login(account, address, proxy)
                     if login and login.get("msg") == "success":
                         self.access_tokens[address] = login["data"]["token"]
@@ -217,16 +219,16 @@ class Sixpence:
                     user_agent = random.choice(USER_AGENT)
                     self.BASE_HEADERS[address] = {
                         "Accept": "application/json, text/plain, */*",
-                        "Accept-Language": "Google",
-                        "subject": "account",
+                        "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+                        "Origin": "chrome-extension://bcakokeeafaehcajfkajcpbdkfnoahlh",
                         "User-Agent": user_agent
                     }
 
                     if await self.process_user_login(account, address, use_proxy):
                         await self.process_bind_invite(account, address, use_proxy)
-                    time.sleep(15)  # Increased delay to avoid rate limiting
+                    time.sleep(15)
                 except Exception as e:
-                    self.log(f"{Fore.RED}[ Account: {idx} - Error: {e} ]{Style.RESET_ALL}")
+                    self.log(f"{Fore.RED}[ Account: {idx} - Error: {str(e)} ]{Style.RESET_ALL}")
                     continue
 
         except ValueError:
