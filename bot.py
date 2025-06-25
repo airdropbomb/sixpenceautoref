@@ -9,7 +9,9 @@ import asyncio, random, json, os, pytz, time
 wib = pytz.timezone('Asia/Jakarta')
 USER_AGENT = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    # ... ကျန်တဲ့ user agents ...
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/120.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 ]
 
 class Sixpence:
@@ -25,11 +27,11 @@ class Sixpence:
                     raise ValueError("Empty referral code")
                 self.log(f"{Fore.GREEN}Referral Code Loaded: {self.ref_code}{Style.RESET_ALL}")
         except FileNotFoundError:
-            self.log(f"{Fore.RED}refer.txt file not found. Using default code: FTS6LA{Style.RESET_ALL}")
-            self.ref_code = "FTS6LA"  # default code ထားမယ်
+            self.log(f"{Fore.RED}refer.txt file not found. Using default code: 3SO6MZ{Style.RESET_ALL}")
+            self.ref_code = "3SO6MZ"
         except Exception as e:
             self.log(f"{Fore.RED}Failed to read refer.txt: {e}{Style.RESET_ALL}")
-            self.ref_code = "FTS6LA"  # default code ထားမယ်
+            self.ref_code = "3SO6MZ"
         self.proxies = []
         self.proxy_index = 0
         self.account_proxies = {}
@@ -42,9 +44,11 @@ class Sixpence:
             f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
             f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}{message}"
         )
+        # Log ကို file ထဲသိမ်းဖို့
+        with open('log.txt', 'a') as f:
+            f.write(f"[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ] | {message}\n")
 
     def generate_new_account(self):
-        """Generate a new Ethereum private key and address."""
         try:
             account = Account.create()
             private_key = account._private_key.hex()
@@ -55,7 +59,6 @@ class Sixpence:
             return None, None
 
     def save_account_to_file(self, private_key):
-        """Save the private key to accounts.txt."""
         try:
             with open('accounts.txt', 'a') as file:
                 file.write(f"{private_key}\n")
@@ -121,6 +124,30 @@ class Sixpence:
                 response.raise_for_status()
                 return await response.json()
 
+    async def user_login(self, account, address, proxy=None):
+        url = f"{self.BASE_API}/login"
+        data = json.dumps(self.generate_payload(account, address))
+        headers = self.BASE_HEADERS[address].copy()
+        headers["Authorization"] = "Bearer null"
+        headers["Content-Length"] = str(len(data))
+        headers["Content-Type"] = "application/json"
+        async with ClientSession(timeout=ClientTimeout(total=60)) as session:
+            async with session.post(url, headers=headers, data=data, proxy=proxy, ssl=False) as response:
+                response.raise_for_status()
+                return await response.json()
+
+    async def bind_invite(self, address, proxy=None):
+        url = f"{self.BASE_API}/inviteBind"
+        data = json.dumps({"inviteCode": self.ref_code})
+        headers = self.BASE_HEADERS[address].copy()
+        headers["Authorization"] = f"Bearer {self.access_tokens[address]}"
+        headers["Content-Length"] = str(len(data))
+        headers["Content-Type"] = "application/json"
+        async with ClientSession(timeout=ClientTimeout(total=60)) as session:
+            async with session.post(url, headers=headers, data=data, proxy=proxy, ssl=False) as response:
+                response.raise_for_status()
+                return await response.json()
+
     async def process_user_login(self, account, address, use_proxy):
         proxy = self.get_next_proxy_for_account(address) if use_proxy else None
         try:
@@ -154,7 +181,6 @@ class Sixpence:
 
     async def main(self):
         try:
-            # အကောင့်အရေအတွက် ဘယ်လောက်ဖန်တီးမလဲ မေးမယ်
             num_accounts = int(input(f"{Fore.BLUE}How many accounts to create? -> {Style.RESET_ALL}").strip())
             use_proxy = input(f"{Fore.BLUE}Use Proxy? [y/n] -> {Style.RESET_ALL}").strip() == "y"
 
@@ -163,7 +189,6 @@ class Sixpence:
 
             self.log(f"{Fore.GREEN}Creating {num_accounts} Accounts...{Style.RESET_ALL}")
 
-            # အကောင့်အသစ်တွေ ဖန်တီးပြီး accounts.txt ထဲသိမ်းမယ်
             accounts = []
             for i in range(num_accounts):
                 private_key, address = self.generate_new_account()
@@ -178,7 +203,6 @@ class Sixpence:
 
             self.log(f"{Fore.GREEN}Total Accounts: {len(accounts)}{Style.RESET_ALL}")
 
-            # အကောင့်တွေကို login လုပ်ပြီး referral code ချိတ်မယ်
             for idx, account in enumerate(accounts, start=1):
                 try:
                     address = self.generate_address(account)
@@ -196,11 +220,10 @@ class Sixpence:
 
                     if await self.process_user_login(account, address, use_proxy):
                         await self.process_bind_invite(account, address, use_proxy)
-                    # Request တွေကြားမှာ 5 စက္ကန့် delay ထည့်ပါ
-                    time.sleep(5)
+                    time.sleep(10)  # 10 စက္ကန့် delay ထည့်ထားတယ်
                 except Exception as e:
                     self.log(f"{Fore.RED}[ Account: {idx} - Error: {str(e)} ]{Style.RESET_ALL}")
-                    continue  # Error ဖြစ်ရင် နောက်အကောင့်ကို ဆက်လုပ်ပါ
+                    continue
 
         except ValueError:
             self.log(f"{Fore.RED}Invalid input for number of accounts.{Style.RESET_ALL}")
