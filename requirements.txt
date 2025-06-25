@@ -1,0 +1,5 @@
+aiohttp==3.9.5
+eth-account==0.13.3
+eth-utils==4.1.1
+colorama==0.4.6
+pytz==2024.1
