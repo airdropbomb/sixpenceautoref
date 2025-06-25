@@ -18,7 +18,6 @@ class Sixpence:
     def __init__(self):
         self.BASE_API = "https://us-central1-openoracle-de73b.cloudfunctions.net/backend_apis/api/service"
         self.BASE_HEADERS = {}
-        # refer.txt ကနေ referral code ဖတ်မယ်
         try:
             with open('refer.txt', 'r') as file:
                 self.ref_code = file.read().strip()
@@ -27,11 +26,11 @@ class Sixpence:
                     raise ValueError("Empty referral code")
                 self.log(f"{Fore.GREEN}Referral Code Loaded: {self.ref_code}{Style.RESET_ALL}")
         except FileNotFoundError:
-            self.log(f"{Fore.RED}refer.txt file not found. Using default code: 3SO6MZ{Style.RESET_ALL}")
-            self.ref_code = "3SO6MZ"
+            self.log(f"{Fore.RED}refer.txt file not found. Using default code: FTS6LA{Style.RESET_ALL}")
+            self.ref_code = "FTS6LA"
         except Exception as e:
             self.log(f"{Fore.RED}Failed to read refer.txt: {e}{Style.RESET_ALL}")
-            self.ref_code = "3SO6MZ"
+            self.ref_code = "FTS6LA"
         self.proxies = []
         self.proxy_index = 0
         self.account_proxies = {}
@@ -44,7 +43,6 @@ class Sixpence:
             f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
             f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}{message}"
         )
-        # Log ကို file ထဲသိမ်းဖို့
         with open('log.txt', 'a') as f:
             f.write(f"[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ] | {message}\n")
 
@@ -148,31 +146,37 @@ class Sixpence:
                 response.raise_for_status()
                 return await response.json()
 
-    async def process_user_login(self, account, address, use_proxy):
+    async def process_user_login(self, account, address, use_proxy, retries=3):
         proxy = self.get_next_proxy_for_account(address) if use_proxy else None
-        try:
-            nonce_data = await self.get_nonce(address, proxy)
-            if nonce_data and nonce_data.get("msg") == "ok":
-                self.nonce[address] = nonce_data["data"]["nonce"]
-                self.exp_time[address] = nonce_data["data"]["expireTime"]
-                login = await self.user_login(account, address, proxy)
-                if login and login.get("msg") == "success":
-                    self.access_tokens[address] = login["data"]["token"]
-                    self.print_message(address, proxy, Fore.GREEN, "Login Success")
-                    return True
+        for attempt in range(1, retries + 1):
+            try:
+                nonce_data = await self.get_nonce(address, proxy)
+                if nonce_data and nonce_data.get("msg") == "ok":
+                    self.nonce[0] = nonce_data["data"]["nonce"]
+                    self.exp_time[0] = nonce_data["data"]["expireTime"]
+                    login = await self.user_login(account, address, proxy)
+                    if login and login.get("msg") == "success":
+                        self.access_tokens[address] = login["data"]["token"]
+                        self.print_message(address, proxy, Fore.GREEN, "Login Success")
+                        return True
+                    else:
+                        self.print_message(address, proxy, Fore.RED, f"Login Failed: {login}")
                 else:
-                    self.print_message(address, proxy, Fore.RED, f"Login Failed: {login}")
-            else:
-                self.print_message(address, proxy, Fore.RED, f"Nonce Fetch Failed: {nonce_data}")
-        except Exception as e:
-            self.print_message(address, proxy, Fore.RED, f"Error in Login: {str(e)}")
+                    self.print_message(address, proxy, Fore.RED, f"Nonce Fetch Failed: {nonce_data}")
+            except Exception as e:
+                if "429" in str(e) and attempt < retries:
+                    self.print_message(address, proxy, Fore.YELLOW, f"429 Too Many Requests, retrying {attempt}/{retries} after 15 seconds")
+                    await asyncio.sleep(15)
+                    continue
+                self.print_message(address, proxy, Fore.RED, f"Error in Login: {str(e)}")
+                break
         return False
 
     async def process_bind_invite(self, account, address, use_proxy):
         proxy = self.get_next_proxy_for_account(address) if use_proxy else None
         try:
             bind = await self.bind_invite(address, proxy)
-            if bind and bind.get("msg") == "ok":
+            if bind and bind.get("success") is True and bind.get("msg") == "bind invite success":
                 self.print_message(address, proxy, Fore.GREEN, f"Referral Code {self.ref_code} Bound Successfully")
             else:
                 self.print_message(address, proxy, Fore.RED, f"Failed to Bind Referral Code: {bind}")
@@ -181,8 +185,8 @@ class Sixpence:
 
     async def main(self):
         try:
-            num_accounts = int(input(f"{Fore.BLUE}How many accounts to create? -> {Style.RESET_ALL}").strip())
-            use_proxy = input(f"{Fore.BLUE}Use Proxy? [y/n] -> {Style.RESET_ALL}").strip() == "y"
+            num_accounts = int(input(f"{Fore.BLUE}How many accounts to create?: {Style.RESET_ALL}").strip())
+            use_proxy = input(f"{Fore.BLUE}Use Proxy? [y/n]: {Style.RESET_ALL}").strip() == "y"
 
             if use_proxy:
                 await self.load_proxies()
@@ -213,16 +217,16 @@ class Sixpence:
                     user_agent = random.choice(USER_AGENT)
                     self.BASE_HEADERS[address] = {
                         "Accept": "application/json, text/plain, */*",
-                        "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-                        "Origin": "chrome-extension://bcakokeeafaehcajfkajcpbdkfnoahlh",
+                        "Accept-Language": "Google",
+                        "subject": "account",
                         "User-Agent": user_agent
                     }
 
                     if await self.process_user_login(account, address, use_proxy):
                         await self.process_bind_invite(account, address, use_proxy)
-                    time.sleep(10)  # 10 စက္ကန့် delay ထည့်ထားတယ်
+                    time.sleep(15)  # Increased delay to avoid rate limiting
                 except Exception as e:
-                    self.log(f"{Fore.RED}[ Account: {idx} - Error: {str(e)} ]{Style.RESET_ALL}")
+                    self.log(f"{Fore.RED}[ Account: {idx} - Error: {e} ]{Style.RESET_ALL}")
                     continue
 
         except ValueError:
